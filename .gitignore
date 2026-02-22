@@ -1,0 +1,30 @@
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.so
+
+.ipynb_checkpoints/
+**/.ipynb_checkpoints/
+
+.DS_Store
+Thumbs.db
+
+.venv/
+venv/
+env/
+
+.env
+.env.*
+
+# 训练输出与本地模型产物
+checkpoint/
+checkpoints/
+outputs/
+logs/
+wandb/
+
+# 本地基础模型目录（建议从 HuggingFace 拉取）
+Qwen2.5-VL-7B-Instruct/
+
+# 本地临时文件
+新建 文本文档.txt

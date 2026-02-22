@@ -1,0 +1,12 @@
+torch==2.7.0
+torchaudio==2.7.0
+torchvision==0.22.0
+transformers
+peft
+safetensors
+datasets
+deepspeed >= 0.17.6
+qwen-vl-utils
+accelerate
+wandb
+modelscope[framework]

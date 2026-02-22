@@ -1,0 +1,15 @@
+{"prompt": [{"role": "user", "content": "Picture 1: <img>data/pngs/14.png</img>\n这张收据的开票日期是多少？请仔细查看图片中的日期部分。"}], "answer": "2020年5月27日"}
+{"prompt": [{"role": "user", "content": "Picture 1: <img>data/pngs/13.png</img>\n图中有一个选项被红笔圈出并修改了，请问修改后的数值是多少？只回答数值。"}], "answer": "5000万吨"}
+{"prompt": [{"role": "user", "content": "Picture 1: <img>data/pngs/4.png</img>\n请识别这辆红色汽车车牌上的文字内容。"}], "answer": "PIXELS"}
+{"prompt": [{"role": "user", "content": "Picture 1: <img>data/pngs/11.png</img>\n这张图片中的标志性建筑位于哪个国家的哪个城市？"}], "answer": "澳大利亚悉尼"}
+{"prompt": [{"role": "user", "content": "Picture 1: <img>data/pngs/12.png</img>\n很多人容易把这座桥误认为是伦敦桥，它的真实名字是什么？"}], "answer": "伦敦塔桥"}
+{"prompt": [{"role": "user", "content": "Picture 1: <img>data/pngs/9.png</img>\n仔细观察这只猫的眼睛，它的眼睛是什么颜色的？并判断它的品种。"}], "answer": "橙色眼睛，英短蓝猫"}
+{"prompt": [{"role": "user", "content": "Picture 1: <img>data/pngs/14.png</img>\n收据上的金额大写部分写的是多少？请完整提取。"}], "answer": "贰仟零伍拾元零角零分"}
+{"prompt": [{"role": "user", "content": "Picture 1: <img>data/pngs/3.png</img>\n这幅画作的名称是什么？作者是谁？"}], "answer": "戴珍珠耳环的少女，维米尔"}
+{"prompt": [{"role": "user", "content": "Picture 1: <img>data/pngs/1.png</img>\n图片背景中的高塔是什么？图片中的人物在做什么动作？"}], "answer": "埃菲尔铁塔，跳跃"}
+{"prompt": [{"role": "user", "content": "Picture 1: <img>data/pngs/7.png</img>\n这座位于水边的城堡叫什么名字？"}], "answer": "西庸城堡"}
+{"prompt": [{"role": "user", "content": "Picture 1: <img>data/pngs/5.png</img>\n描述喷泉顶部的雕像特征。"}], "answer": "天使雕像，张开翅膀"}
+{"prompt": [{"role": "user", "content": "Picture 1: <img>data/pngs/2.png</img>\n图中的高塔是哪个城市的标志性建筑？"}], "answer": "杜塞尔多夫"}
+{"prompt": [{"role": "user", "content": "Picture 1: <img>data/pngs/4.png</img>\n这辆车后面安装了一个复杂的设备，这个设备主要包含了什么器材？"}], "answer": "摄影机"}
+{"prompt": [{"role": "user", "content": "Picture 1: <img>data/pngs/13.png</img>\n根据红色的修改意见，选项C原本的数值是被保留还是被替换了？"}], "answer": "被替换"}
+{"prompt": [{"role": "user", "content": "Picture 1: <img>data/pngs/8.png</img>\n这是一张航拍图，主要展示了什么自然景观？"}], "answer": "蜿蜒的河流和茂密的森林"}

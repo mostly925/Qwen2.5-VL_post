@@ -1,0 +1,48 @@
+segments:
+  - id: seg-001
+    type: abstract
+    source: artifacts/paper_abs.html:171
+    evidence: "Title: Experiential Reinforcement Learning"
+    summary: "论文提出 ERL，将反思显式嵌入 RL 训练过程。"
+
+  - id: seg-002
+    type: algorithm
+    source: artifacts/paper_full.html:161-221
+    evidence: "Algorithm 1: first attempt -> reflection -> second attempt -> RL update -> distill"
+    summary: "ERL 主循环包含双尝试、反思奖励、记忆写入、策略更新与内化蒸馏。"
+
+  - id: seg-003
+    type: formula
+    source: artifacts/paper_full.html:214,277
+    evidence: "L_policy(theta) = -E[A log pi_theta(y|x,·)]"
+    summary: "策略目标覆盖首轮输出、反思输出和二轮输出。"
+
+  - id: seg-004
+    type: formula
+    source: artifacts/paper_full.html:280-289
+    evidence: "L_distill(theta) = -E[I(r^(2)>0) log pi_theta(y^(2)|x)]"
+    summary: "仅对成功二轮尝试做蒸馏，保证部署时无需反思也可复现提升。"
+
+  - id: seg-005
+    type: memory
+    source: artifacts/paper_full.html:250,470
+    evidence: "cross-episode reflection memory; store if r^(2) > tau"
+    summary: "反思记忆跨 episode 持久化，并按阈值筛选，避免低质量记忆污染。"
+
+  - id: seg-006
+    type: mechanism
+    source: artifacts/paper_full.html:367-380
+    evidence: "post-reflection trajectories consistently achieve higher reward"
+    summary: "反思在同一 episode 内带来即时收益提升，是 ERL 关键机制。"
+
+  - id: seg-007
+    type: experiment
+    source: artifacts/paper_full.html:315,336,357
+    evidence: "FrozenLake / Sokoban / HotpotQA; ERL > RLVR"
+    summary: "评测覆盖稀疏奖励控制和工具推理任务，ERL 整体优于 RLVR。"
+
+  - id: seg-008
+    type: appendix
+    source: artifacts/paper_full.html:903-985
+    evidence: "Algorithm 2 includes gated reflection and memory logic"
+    summary: "附录给出更细化实现（门控反思、记忆和训练细节）。"

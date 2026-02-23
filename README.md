@@ -9,6 +9,7 @@
 - **SFT**（监督微调）训练流程
 - **DPO**（直接偏好优化）训练流程
 - **GRPO**（组相对策略优化）训练流程
+- **ERL/RLVR**（论文机制最小复现与对照）流程
 - LoRA 权重提取、合并与最终可推理模型导出
 - vLLM/OpenAI 兼容 API 推理验证
 
@@ -26,7 +27,7 @@
 .
 ├── run_qwen_sft.py          # SFT 训练入口
 ├── run_qwen_dpo.py          # DPO 训练入口
-├── run_qwen_grpo.py         # GRPO 训练入口
+├── run_qwen_rl.py           # RL 训练入口（GRPO/ERL/RLVR）
 ├── convert_lora_final.py    # LoRA 提取与合并导出
 ├── inference.py             # 最终模型推理示例
 ├── test_vllm_api.py         # vLLM API 兼容测试
@@ -56,7 +57,9 @@ pip install -r requirements.txt
 ```bash
 python run_qwen_sft.py
 python run_qwen_dpo.py
-python run_qwen_grpo.py
+python run_qwen_rl.py
+python run_qwen_rl.py --trainer_mode erl
+python run_qwen_rl.py --trainer_mode rlvr
 ```
 
 ### 3) 合并 LoRA 并导出最终模型

@@ -1,0 +1,57 @@
+file_structure:
+  evidence_segments: [seg-001, seg-002, seg-008]
+  rationale: "需要把 ERL 训练循环拆分为可测试的模块（环境、策略、训练器、评估、测试）。"
+  files:
+    - generated/README.md
+    - generated/requirements.txt
+    - generated/src/erl/__init__.py
+    - generated/src/erl/config.py
+    - generated/src/erl/memory.py
+    - generated/src/erl/environment.py
+    - generated/src/erl/policy.py
+    - generated/src/erl/trainers.py
+    - generated/src/erl/evaluation.py
+    - generated/run_demo.py
+    - generated/tests/test_erl_flow.py
+    - generated/tests/test_erl_vs_rlvr.py
+
+implementation_components:
+  evidence_segments: [seg-002, seg-003, seg-004, seg-005, seg-006]
+  components:
+    - name: "ERL 主循环"
+      detail: "实现 first attempt -> reflection -> second attempt -> rl update -> distill update。"
+    - name: "反思记忆"
+      detail: "实现跨 episode 记忆池，按 r2 > tau 写入。"
+    - name: "策略更新"
+      detail: "实现近似 REINFORCE 更新，覆盖首轮/二轮/反思相关信号。"
+    - name: "内化蒸馏"
+      detail: "当 r2 > 0 时，训练模型从 x 直接复现 y2。"
+    - name: "门控反思"
+      detail: "当首轮奖励低于阈值触发反思；否则跳过。"
+
+validation_approach:
+  evidence_segments: [seg-006, seg-007]
+  strategy:
+    - "单元测试：验证记忆写入条件、反思门控、二轮尝试行为。"
+    - "集成测试：在玩具稀疏奖励环境中比较 ERL 与 RLVR 训练后表现。"
+    - "成功标准：ERL 最终平均奖励高于 RLVR，且测试全通过。"
+
+environment_setup:
+  evidence_segments: [seg-007, seg-008]
+  runtime:
+    language: "Python 3.10+"
+    dependencies:
+      - "无强制第三方依赖（使用标准库）"
+    hardware: "CPU 即可运行最小复现实验"
+
+implementation_strategy:
+  evidence_segments: [seg-002, seg-004, seg-008]
+  phases:
+    - phase: "P1"
+      goal: "先搭建环境/策略/记忆等可独立测试的解耦模块"
+    - phase: "P2"
+      goal: "实现 ERL 与 RLVR 两个训练器，确保可对照"
+    - phase: "P3"
+      goal: "补充评估、示例脚本与自动化测试"
+    - phase: "P4"
+      goal: "执行最小验证（依赖安装、测试、语法检查）并输出报告"

@@ -4,7 +4,7 @@
 
 ## 项目定位
 
-本项目围绕 Qwen2.5-VL 的训练稳定性、推理可用性与工程落地展开，核心覆盖：
+本项目围绕 Qwen2.5-VL-7B 的训练稳定性、推理可用性与工程落地展开，核心覆盖：
 
 - **SFT**（监督微调）训练流程
 - **DPO**（直接偏好优化）训练流程
@@ -15,7 +15,7 @@
 
 ## 核心能力
 
-- DeepSpeed 分布式训练（ZeRO-2/ZeRO-3）
+- DeepSpeed 分布式训练（ZeRO-2/ZeRO-3）,推荐使用多卡进行训练
 - LoRA 高效微调（PEFT）
 - BF16 混合精度训练与推理
 - 多模态数据（图像 + 文本）处理
@@ -57,20 +57,15 @@ pip install -r requirements.txt
 ```bash
 python run_qwen_sft.py
 python run_qwen_dpo.py
-python run_qwen_rl.py
-python run_qwen_rl.py --trainer_mode erl
+python run_qwen_rl.py --trainer_mode 仅 {grpo, erl}
 ```
 
 ### 2.1) ERL 多模态数据集制作（GRPO 风格）
 
-当前仓库中的多模态强化学习按论文语义区分为：
-
-- `grpo`：标准 GRPO 基线（作为 RLVR 在本项目中的工程映射）
+- `grpo`：标准 GRPO 基线
 - `erl`：在 GRPO 基线之上加入 first attempt → reflection → second attempt 与反思记忆
 
 两者都直接使用与 `grpo_dataset.jsonl` 相同风格的数据：`prompt` + `answer`。
-
-> 不需要额外维护 `data/训练数据集.jsonl`；直接使用 `data/grpo_dataset.jsonl`（或你自己的同结构文件）即可。
 
 支持两种文件形态：
 
@@ -113,4 +108,9 @@ python test_vllm_api.py
 ## 说明
 
 - 仓库默认不提交本地基础模型目录 `Qwen2.5-VL-7B-Instruct/`，请按需从官方来源下载。
+
+  ```
+  modelscope download --model Qwen/Qwen2.5-VL-7B-Instruct
+  ```
+
 - 训练脚本中的路径以本地环境为例，实际使用时请改为你的真实路径。

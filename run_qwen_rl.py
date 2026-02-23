@@ -2,17 +2,9 @@ import argparse
 import importlib
 import os
 import re
-from typing import TYPE_CHECKING, Any, List, Optional
-
-from trainer.erl import (
-    ERLConfig,
-    ERLTrainer,
-    RLVRTrainer,
-    TabularPolicy,
-    Task,
-    ToySparseControlEnv,
-    evaluate_policy,
-)
+import unicodedata
+from collections import Counter
+from typing import TYPE_CHECKING, Any, Iterable, List, Optional
 
 
 def _apply_qwen2_rmsnorm_patch() -> None:
@@ -47,11 +39,61 @@ class JsonlFileDataset(_FileDatasetBase):
         return self.file_paths[idx]
 
 
+_ANSWER_SPLIT_PATTERN = re.compile(r"[，,、;；。.!?？\n]+")
+_CONNECTOR_PATTERN = re.compile(r"\b(?:and|&)\b|以及|并且|并|和|与|及")
+_PUNCT_STRIP_PATTERN = re.compile(r"[\s\"“”'‘’()（）\[\]{}<>《》【】:_：-]")
+
+_ANSWER_SYNONYMS = {
+    "巴黎铁塔": "埃菲尔铁塔",
+    "埃菲尔塔": "埃菲尔铁塔",
+    "eiffel tower": "埃菲尔铁塔",
+    "eiffeltower": "埃菲尔铁塔",
+    "tower bridge": "伦敦塔桥",
+    "london tower bridge": "伦敦塔桥",
+    "跳起": "跳跃",
+    "跳起来": "跳跃",
+    "跃起": "跳跃",
+    "jumping": "跳跃",
+    "jump": "跳跃",
+    "英短蓝猫": "英国短毛猫",
+}
+
+
 def extract_answer(text: str) -> str:
     match = re.search(r"<answer>(.*?)</answer>", text, re.DOTALL | re.IGNORECASE)
     if match:
         return match.group(1).strip()
-    return text.strip()
+    no_think = re.sub(r"<think>.*?</think>", " ", text, flags=re.DOTALL | re.IGNORECASE)
+    return no_think.strip()
+
+
+def _normalize_unicode(text: str) -> str:
+    normalized = unicodedata.normalize("NFKC", text).strip().lower()
+    normalized = re.sub(r"<[^>]+>", " ", normalized)
+    normalized = re.sub(r"\s+", " ", normalized)
+    for src, dst in _ANSWER_SYNONYMS.items():
+        normalized = normalized.replace(src, dst)
+    return normalized.strip()
+
+
+def _normalize_segment(segment: str) -> str:
+    normalized = _normalize_unicode(segment)
+    for prefix in ("答案是", "答案:", "答案：", "答:", "答：", "是", "为"):
+        if normalized.startswith(prefix):
+            normalized = normalized[len(prefix) :].strip()
+    normalized = _PUNCT_STRIP_PATTERN.sub("", normalized)
+    for src, dst in _ANSWER_SYNONYMS.items():
+        normalized = normalized.replace(src, dst)
+    return normalized
+
+
+def _split_answer_segments(text: str) -> List[str]:
+    normalized = _normalize_unicode(text)
+    normalized = _CONNECTOR_PATTERN.sub("，", normalized)
+    segments = [
+        _normalize_segment(part) for part in _ANSWER_SPLIT_PATTERN.split(normalized)
+    ]
+    return [seg for seg in segments if seg]
 
 
 def get_last_number(text: str) -> Optional[float]:
@@ -64,106 +106,110 @@ def get_last_number(text: str) -> Optional[float]:
     return None
 
 
+def _counter_f1(pred_items: Iterable[str], gold_items: Iterable[str]) -> float:
+    pred_counter = Counter(pred_items)
+    gold_counter = Counter(gold_items)
+    common = sum((pred_counter & gold_counter).values())
+    pred_total = sum(pred_counter.values())
+    gold_total = sum(gold_counter.values())
+    if pred_total == 0 or gold_total == 0 or common == 0:
+        return 0.0
+    precision = common / pred_total
+    recall = common / gold_total
+    return 2.0 * precision * recall / (precision + recall)
+
+
+def _char_ngram_f1(pred_text: str, gold_text: str, n: int = 2) -> float:
+    pred = pred_text.strip()
+    gold = gold_text.strip()
+    if not pred or not gold:
+        return 0.0
+
+    if len(pred) < n:
+        pred_items = [pred]
+    else:
+        pred_items = [pred[idx : idx + n] for idx in range(len(pred) - n + 1)]
+
+    if len(gold) < n:
+        gold_items = [gold]
+    else:
+        gold_items = [gold[idx : idx + n] for idx in range(len(gold) - n + 1)]
+
+    return _counter_f1(pred_items, gold_items)
+
+
+def _number_match_reward(generated: str, target: str) -> float:
+    gen_num = get_last_number(generated)
+    target_num = get_last_number(target)
+    if gen_num is None or target_num is None:
+        return 0.0
+
+    diff = abs(gen_num - target_num)
+    if diff == 0:
+        return 1.0
+
+    scale = max(abs(target_num), 1e-6)
+    rel_err = diff / scale
+    if rel_err <= 0.02:
+        return 0.9
+    if rel_err <= 0.1:
+        return 0.75
+    if rel_err <= 0.5:
+        return 0.5
+    return 0.2
+
+
 def compute_accuracy_reward(generated: str, target: str) -> float:
     gen_answer = extract_answer(generated)
     target_answer = extract_answer(target)
-    if gen_answer.lower() == target_answer.lower():
+
+    gen_segments = _split_answer_segments(gen_answer)
+    target_segments = _split_answer_segments(target_answer)
+
+    if not target_segments:
+        return 0.0
+
+    if gen_segments == target_segments:
         return 1.0
-    if target_answer.lower() in gen_answer.lower():
-        return 0.7
-    gen_num = get_last_number(gen_answer)
-    target_num = get_last_number(target_answer)
-    if gen_num is not None and target_num is not None:
-        diff = abs(gen_num - target_num)
-        if diff == 0:
-            return 1.0
-        if target_num != 0 and diff < 0.1 * abs(target_num):
-            return 0.8
-        if target_num != 0 and diff < 0.5 * abs(target_num):
-            return 0.5
-        return 0.2
-    return 0.0
 
+    if sorted(gen_segments) == sorted(target_segments):
+        return 1.0
 
-def compute_format_reward(text: str) -> float:
-    reward = 0.0
-    if "<think>" in text.lower() and "</think>" in text.lower():
-        reward += 0.3
-    if "<answer>" in text.lower() and "</answer>" in text.lower():
-        reward += 0.3
-    think_match = re.search(r"<think>(.*?)</think>", text, re.DOTALL | re.IGNORECASE)
-    if think_match:
-        think_len = len(think_match.group(1).strip())
-        if think_len > 50:
-            reward += 0.2
-        elif think_len > 20:
-            reward += 0.1
-    return reward
+    segment_f1 = _counter_f1(gen_segments, target_segments)
+    gen_flat = "".join(sorted(gen_segments))
+    target_flat = "".join(sorted(target_segments))
+    ngram_f1 = _char_ngram_f1(gen_flat, target_flat)
+    number_reward = _number_match_reward(gen_answer, target_answer)
+
+    similarity = max(segment_f1, ngram_f1)
+    if similarity >= 0.95:
+        return max(0.95, number_reward)
+    if similarity >= 0.8:
+        return max(0.8, number_reward)
+    if similarity >= 0.6:
+        return max(0.6, number_reward)
+    if similarity >= 0.4:
+        return max(0.4, number_reward)
+    return max(number_reward, 0.0)
 
 
 def reward_func(
     prompts: List[Any], completion_ids: Any, answers: List[Optional[Any]]
 ) -> List[float]:
+    _ = prompts
     from trainer.tools import TrainerTools
 
     tokenizer = TrainerTools().tokenizer
     rewards = []
-    for i in range(len(completion_ids)):
-        generated_text = tokenizer.decode(completion_ids[i], skip_special_tokens=True)
-        answer_item = answers[i]
+    for idx in range(len(completion_ids)):
+        generated_text = tokenizer.decode(completion_ids[idx], skip_special_tokens=True)
+        answer_item = answers[idx]
         target_text = answer_item if isinstance(answer_item, str) else str(answer_item)
-        accuracy_reward = compute_accuracy_reward(generated_text, target_text)
-        format_reward = compute_format_reward(generated_text)
-        total_reward = 0.7 * accuracy_reward + 0.3 * format_reward
-        rewards.append(total_reward)
+        rewards.append(compute_accuracy_reward(generated_text, target_text))
     return rewards
 
 
-def build_demo_tasks() -> List[Task]:
-    return [
-        Task(task_id="t1", target_actions="UURD"),
-        Task(task_id="t2", target_actions="LLDR"),
-        Task(task_id="t3", target_actions="RDLU"),
-        Task(task_id="t4", target_actions="DRUL"),
-    ]
-
-
-def run_erl_or_rlvr(mode: str, args: argparse.Namespace) -> None:
-    tasks = build_demo_tasks()
-    env = ToySparseControlEnv(action_space="UDLR")
-
-    config = ERLConfig(
-        episodes=args.erl_episodes,
-        tau=args.erl_tau,
-        learning_rate=args.erl_lr,
-        distill_rate=args.erl_distill_rate,
-        memory_max_size=args.erl_memory_size,
-        seed=args.erl_seed,
-    )
-
-    policy = TabularPolicy(actions=env.valid_actions(), seed=args.erl_seed)
-    if mode == "erl":
-        trainer = ERLTrainer(env=env, policy=policy, config=config)
-    else:
-        trainer = RLVRTrainer(env=env, policy=policy, config=config)
-
-    stats = trainer.train(tasks)
-    eval_reward = evaluate_policy(env, policy, tasks)
-
-    print("=== 训练完成 ===")
-    print(f"模式: {mode}")
-    print(
-        f"训练均值(first/second): "
-        f"{stats.first_reward_mean:.3f}/{stats.second_reward_mean:.3f}"
-    )
-    print(f"贪心评估奖励: {eval_reward:.3f}")
-    if isinstance(trainer, ERLTrainer):
-        print(f"记忆条目数: {len(trainer.memory)}")
-
-
-def run_grpo() -> None:
-    from trainer.grpo_trainer import GRPOTrainer
-    from trainer.tools import TrainerTools
+def _build_rl_train_config(args: argparse.Namespace):
     from trainer.train_configs import (
         DataLoaderConfig,
         DsConfig,
@@ -174,17 +220,8 @@ def run_grpo() -> None:
         TrainConfig,
     )
 
-    _apply_qwen2_rmsnorm_patch()
-
-    os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "1"
-    os.environ["CKPT_MAX_TO_KEEP"] = "1"
-    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
-    os.environ["PARALLEL_TYPE"] = "ds"
-
-    model_path = "/root/autodl-tmp/Qwen2.5-VL-7B-Instruct"
-    os.environ["TOKEN_DIR"] = model_path
-    data_path = "/root/autodl-tmp/data/grpo_dataset.jsonl"
-    file_dataset = JsonlFileDataset([data_path])
+    os.environ["TOKEN_DIR"] = args.model_path
+    file_dataset = JsonlFileDataset([args.rl_dataset_path])
 
     ds_config = DsConfig(
         zero_config=DsZero2Config(
@@ -194,9 +231,11 @@ def run_grpo() -> None:
         activation_checkpointing=None,
     )
 
+    top_k = None if args.rl_gen_top_k <= 0 else args.rl_gen_top_k
+
     grpo_config = GRPOConfig(
         grpo_steps=1,
-        group_size=4,
+        group_size=args.rl_group_size,
         mixup_alpha=0.9,
         loss_beta=0.01,
         loss_clip_eps=3e-4,
@@ -204,20 +243,20 @@ def run_grpo() -> None:
         loss_delta=None,
         loss_importance_sampling_level="seq",
         loss_type="grpo",
-        gen_max_new_tokens=256,
-        gen_temperature=0.7,
-        gen_k=None,
-        gen_p=0.95,
+        gen_max_new_tokens=args.rl_gen_max_new_tokens,
+        gen_temperature=args.rl_gen_temperature,
+        gen_k=top_k,
+        gen_p=args.rl_gen_top_p,
         gen_suppress_tokens=None,
     )
 
-    train_config = TrainConfig(
-        n_epochs=3,
-        batch_size=1,
-        model_name_or_path=model_path,
+    return TrainConfig(
+        n_epochs=args.rl_n_epochs,
+        batch_size=args.rl_batch_size,
+        model_name_or_path=args.model_path,
         file_dataset=file_dataset,
-        max_seq_len=2048,
-        eval_batch_interval=100,
+        max_seq_len=args.rl_max_seq_len,
+        eval_batch_interval=args.rl_eval_batch_interval,
         use_lora=True,
         lora_rank=8,
         lora_alpha=32,
@@ -243,12 +282,8 @@ def run_grpo() -> None:
         ),
     )
 
-    trainer = GRPOTrainer(
-        train_config=train_config,
-        reward_func=reward_func,
-        eval_prompts=[],
-    )
 
+def _disable_gradient_checkpointing(trainer: Any) -> None:
     if hasattr(trainer.train_model, "gradient_checkpointing_disable"):
         trainer.train_model.gradient_checkpointing_disable()
         print("✅ 已显式禁用 Trainer 模型的梯度检查点")
@@ -265,29 +300,93 @@ def run_grpo() -> None:
         trainer.train_model.model.gradient_checkpointing_disable()
         print("✅ 已显式禁用 Base Model 的梯度检查点")
 
-    print("🚀 开始在 A800 上进行高速 GRPO 训练 (ZeRO-2, No-GC)...")
+
+def _setup_rl_runtime_env() -> None:
+    os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "1"
+    os.environ["CKPT_MAX_TO_KEEP"] = "1"
+    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+    os.environ["PARALLEL_TYPE"] = "ds"
+
+
+def run_grpo_baseline(args: argparse.Namespace) -> None:
+    from trainer.grpo_trainer import GRPOTrainer
+
+    _apply_qwen2_rmsnorm_patch()
+    _setup_rl_runtime_env()
+
+    train_config = _build_rl_train_config(args)
+    trainer = GRPOTrainer(
+        train_config=train_config,
+        reward_func=reward_func,
+        eval_prompts=[],
+    )
+    _disable_gradient_checkpointing(trainer)
+
+    print("🚀 开始 GRPO 多模态基线训练...")
     trainer.train()
+
+
+def run_erl_multimodal(args: argparse.Namespace) -> None:
+    from trainer.erl_vlm_trainer import ERLVLMTrainer
+
+    _apply_qwen2_rmsnorm_patch()
+    _setup_rl_runtime_env()
+
+    train_config = _build_rl_train_config(args)
+    trainer = ERLVLMTrainer(
+        train_config=train_config,
+        reward_func=reward_func,
+        eval_prompts=[],
+        erl_tau=args.erl_tau,
+        erl_memory_size=args.erl_memory_size,
+        erl_reflection_max_new_tokens=args.erl_reflection_max_new_tokens,
+        erl_reflection_history_size=args.erl_reflection_history_size,
+    )
+    _disable_gradient_checkpointing(trainer)
+
+    print("🚀 开始 ERL 多模态训练（first attempt → reflection → second attempt）...")
+    trainer.train()
+    metrics = trainer.latest_erl_metrics
+    print(
+        "✅ ERL 训练统计: "
+        f"first_reward_mean={metrics['first_reward_mean']:.4f}, "
+        f"second_reward_mean={metrics['second_reward_mean']:.4f}, "
+        f"reflection_ratio={metrics['reflection_ratio']:.4f}"
+    )
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--trainer_mode", choices=["grpo", "erl"], default="grpo")
+
     parser.add_argument(
-        "--trainer_mode",
-        choices=["grpo", "erl", "rlvr"],
-        default="grpo",
+        "--model_path",
+        type=str,
+        default="/root/autodl-tmp/Qwen2.5-VL-7B-Instruct",
     )
-    parser.add_argument("--erl_episodes", type=int, default=600)
+    parser.add_argument(
+        "--rl_dataset_path", type=str, default="data/grpo_dataset.jsonl"
+    )
+    parser.add_argument("--rl_n_epochs", type=int, default=3)
+    parser.add_argument("--rl_batch_size", type=int, default=1)
+    parser.add_argument("--rl_group_size", type=int, default=4)
+    parser.add_argument("--rl_max_seq_len", type=int, default=2048)
+    parser.add_argument("--rl_eval_batch_interval", type=int, default=100)
+    parser.add_argument("--rl_gen_max_new_tokens", type=int, default=256)
+    parser.add_argument("--rl_gen_temperature", type=float, default=0.7)
+    parser.add_argument("--rl_gen_top_p", type=float, default=0.95)
+    parser.add_argument("--rl_gen_top_k", type=int, default=0)
+
     parser.add_argument("--erl_tau", type=float, default=0.8)
-    parser.add_argument("--erl_lr", type=float, default=0.12)
-    parser.add_argument("--erl_distill_rate", type=float, default=0.35)
     parser.add_argument("--erl_memory_size", type=int, default=64)
-    parser.add_argument("--erl_seed", type=int, default=42)
+    parser.add_argument("--erl_reflection_max_new_tokens", type=int, default=128)
+    parser.add_argument("--erl_reflection_history_size", type=int, default=2)
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
-    if args.trainer_mode in {"erl", "rlvr"}:
-        run_erl_or_rlvr(args.trainer_mode, args)
+    if args.trainer_mode == "erl":
+        run_erl_multimodal(args)
     else:
-        run_grpo()
+        run_grpo_baseline(args)
